@@ -27,20 +27,29 @@ use std::sync::{Condvar, Mutex};
 /// ```
 /// use std_semaphore::Semaphore;
 ///
-/// // Create a semaphore that represents 5 resources
-/// let sem = Semaphore::new(5);
+/// // Create a semaphore that represents 6 resources
+/// let sem = Semaphore::new(6);
 ///
-/// // Acquire one of the resources
+/// // Acquire one or more of the resources
 /// sem.acquire();
+/// sem.acquire_many(2);
 ///
-/// // Acquire one of the resources for a limited period of time
+/// // Acquire one or more of the resources for a limited period of time
 /// {
 ///     let _guard = sem.access();
 ///     // ...
-/// } // resources is released here
+/// } // resource is released here
+
+/// {
+///     let _guard = sem.access_many(3);
+///     // ...
+/// } // resources are released here
 ///
 /// // Release our initially acquired resource
 /// sem.release();
+/// // Take care to relase the number of resources you intend, rather than too few or too many.
+/// // Using guards from `access_many(n)` is preferred.
+/// sem.release_many(2);
 /// ```
 pub struct Semaphore {
     lock: Mutex<isize>,
