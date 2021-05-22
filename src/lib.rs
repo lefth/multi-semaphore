@@ -16,7 +16,11 @@ use std::sync::{Condvar, Mutex};
 /// Semaphores are a form of atomic counter where access is only granted if the
 /// counter is a positive value. Each acquisition will block the calling thread
 /// until the counter is positive, and each release will increment the counter
-/// and unblock any threads if necessary.
+/// and unblock any threads if necessary. This library allows getting a count
+/// greater than 1. If a thread acquires 4 resources, the thread will block until
+/// the counter is 4 or greater.  Each release will increment the counter and
+/// unblock any threads if necessary.
+
 ///
 /// # Examples
 ///
@@ -43,10 +47,11 @@ pub struct Semaphore {
     cvar: Condvar,
 }
 
-/// An RAII guard which will release a resource acquired from a semaphore when
+/// An RAII guard which will release one or more resources acquired from a semaphore when
 /// dropped.
 pub struct SemaphoreGuard<'a> {
     sem: &'a Semaphore,
+    amount: isize,
 }
 
 impl Semaphore {
@@ -75,13 +80,41 @@ impl Semaphore {
         *count -= 1;
     }
 
+    /// Acquires one or more resources of this semaphore, blocking the current thread until
+    /// it can do so.
+    ///
+    /// This method will block until the internal count of the semaphore is at
+    /// least `amount`.
+    pub fn acquire_many(&self, amount: isize) {
+        if amount == 0 {
+            return;
+        }
+        let mut count = self.lock.lock().unwrap();
+        while *count < amount {
+            count = self.cvar.wait(count).unwrap();
+        }
+        *count -= amount;
+    }
+
     /// Release a resource from this semaphore.
     ///
     /// This will increment the number of resources in this semaphore by 1 and
     /// will notify any pending waiters in `acquire` or `access` if necessary.
     pub fn release(&self) {
         *self.lock.lock().unwrap() += 1;
-        self.cvar.notify_one();
+        self.cvar.notify_all();
+    }
+
+    /// Release one or more resources from this semaphore.
+    ///
+    /// This will increment the number of resources in this semaphore by 1 and
+    /// will notify any pending waiters in `acquire` or `access` if necessary.
+    pub fn release_many(&self, amount: isize) {
+        if amount == 0 {
+            return;
+        }
+        *self.lock.lock().unwrap() += amount;
+        self.cvar.notify_all();
     }
 
     /// Acquires a resource of this semaphore, returning an RAII guard to
@@ -91,13 +124,32 @@ impl Semaphore {
     /// `release` when the guard returned is dropped.
     pub fn access(&self) -> SemaphoreGuard {
         self.acquire();
-        SemaphoreGuard { sem: self }
+        SemaphoreGuard {
+            sem: self,
+            amount: 1,
+        }
+    }
+
+    /// Acquires one or more resources of this semaphore, returning an RAII guard to
+    /// release the semaphore when dropped.
+    ///
+    /// This function is semantically equivalent to an `acquire_many(n)` followed by a
+    /// `release_many(n)` when the guard returned is dropped.
+    pub fn access_many(&self, amount: isize) -> SemaphoreGuard {
+        self.acquire_many(amount);
+        SemaphoreGuard {
+            sem: self,
+            amount: amount,
+        }
     }
 }
 
 impl<'a> Drop for SemaphoreGuard<'a> {
     fn drop(&mut self) {
-        self.sem.release();
+        if self.amount == 0 {
+            return;
+        }
+        self.sem.release_many(self.amount);
     }
 }
 
@@ -105,9 +157,9 @@ impl<'a> Drop for SemaphoreGuard<'a> {
 mod tests {
     use std::prelude::v1::*;
 
-    use std::sync::Arc;
     use super::Semaphore;
     use std::sync::mpsc::channel;
+    use std::sync::Arc;
     use std::thread;
 
     #[test]
