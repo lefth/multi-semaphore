@@ -1,6 +1,6 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
+// Copyright 2014 The Rust Project Developers. See
 // http://rust-lang.org/COPYRIGHT.
+// Copyright 2021 Daniel Zwell.
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -25,7 +25,7 @@ use std::sync::{Condvar, Mutex};
 /// # Examples
 ///
 /// ```
-/// use std_semaphore::Semaphore;
+/// use multi_semaphore::Semaphore;
 ///
 /// // Create a semaphore that represents 6 resources
 /// let sem = Semaphore::new(6);
