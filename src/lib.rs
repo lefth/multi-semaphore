@@ -56,6 +56,13 @@ pub struct Semaphore {
     cvar: Condvar,
 }
 
+/// An RAII guard which will release one or more resources acquired from a semaphore when
+/// dropped.
+pub struct SemaphoreGuard<'a> {
+    sem: &'a Semaphore,
+    amount: isize,
+}
+
 impl Semaphore {
     /// Creates a new semaphore with the initial count specified.
     ///
@@ -139,27 +146,13 @@ impl Semaphore {
     /// `release_many(n)` when the guard returned is dropped.
     pub fn access_many(&self, amount: isize) -> SemaphoreGuard {
         self.acquire_many(amount);
-        SemaphoreGuard { sem: self, amount }
+        SemaphoreGuard {
+            sem: self,
+            amount: amount,
+        }
     }
 }
 
-/// An RAII guard which will release one or more resources acquired from a semaphore when
-/// dropped.
-pub struct SemaphoreGuard<'a> {
-    sem: &'a Semaphore,
-    amount: isize,
-}
-
-/// Acquire more resources from the semaphore. This enables adjusting resource usage
-/// without breaking RAII.
-impl<'a> SemaphoreGuard<'a> {
-    pub fn acquire_more(&mut self, amount: isize) {
-        self.sem.acquire_many(amount);
-        self.amount += amount;
-    }
-}
-
-/// Release resources being held.
 impl<'a> Drop for SemaphoreGuard<'a> {
     fn drop(&mut self) {
         if self.amount == 0 {

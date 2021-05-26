@@ -1,6 +1,6 @@
 [package]
 name = "multi-semaphore"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["The Rust Project Developers", "Invenia Technical Computing", "Eric Davies <iamed2@gmail.com>", "Daniel Zwell <devel@zwell.net>"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/lefth/multi-semaphore"
