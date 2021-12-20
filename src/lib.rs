@@ -9,7 +9,22 @@
 // except according to those terms.
 
 use std::ops::Drop;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+
+pub struct RawSemaphore {
+    lock: Mutex<isize>,
+    cvar: Condvar,
+}
+
+impl RawSemaphore {
+    pub fn release_many(&self, amount: isize) {
+        if amount == 0 {
+            return;
+        }
+        *self.lock.lock().unwrap() += amount;
+        self.cvar.notify_all();
+    }
+}
 
 /// A counting, blocking, semaphore.
 ///
@@ -52,14 +67,13 @@ use std::sync::{Condvar, Mutex};
 /// sem.release_many(2);
 /// ```
 pub struct Semaphore {
-    lock: Mutex<isize>,
-    cvar: Condvar,
+    inner: Arc<RawSemaphore>,
 }
 
 /// An RAII guard which will release one or more resources acquired from a semaphore when
 /// dropped.
-pub struct SemaphoreGuard<'a> {
-    sem: &'a Semaphore,
+pub struct SemaphoreGuard {
+    sem: Arc<RawSemaphore>,
     amount: isize,
 }
 
@@ -71,8 +85,10 @@ impl Semaphore {
     /// available. It is valid to initialize a semaphore with a negative count.
     pub fn new(count: isize) -> Semaphore {
         Semaphore {
-            lock: Mutex::new(count),
-            cvar: Condvar::new(),
+            inner: Arc::new(RawSemaphore {
+                lock: Mutex::new(count),
+                cvar: Condvar::new(),
+            }),
         }
     }
 
@@ -82,9 +98,9 @@ impl Semaphore {
     /// This method will block until the internal count of the semaphore is at
     /// least 1.
     pub fn acquire(&self) {
-        let mut count = self.lock.lock().unwrap();
+        let mut count = self.inner.lock.lock().unwrap();
         while *count <= 0 {
-            count = self.cvar.wait(count).unwrap();
+            count = self.inner.cvar.wait(count).unwrap();
         }
         *count -= 1;
     }
@@ -98,9 +114,9 @@ impl Semaphore {
         if amount == 0 {
             return;
         }
-        let mut count = self.lock.lock().unwrap();
+        let mut count = self.inner.lock.lock().unwrap();
         while *count < amount {
-            count = self.cvar.wait(count).unwrap();
+            count = self.inner.cvar.wait(count).unwrap();
         }
         *count -= amount;
     }
@@ -110,8 +126,8 @@ impl Semaphore {
     /// This will increment the number of resources in this semaphore by 1 and
     /// will notify any pending waiters in `acquire` or `access` if necessary.
     pub fn release(&self) {
-        *self.lock.lock().unwrap() += 1;
-        self.cvar.notify_all();
+        *self.inner.lock.lock().unwrap() += 1;
+        self.inner.cvar.notify_all();
     }
 
     /// Release one or more resources from this semaphore.
@@ -119,11 +135,7 @@ impl Semaphore {
     /// This will increment the number of resources in this semaphore by 1 and
     /// will notify any pending waiters in `acquire` or `access` if necessary.
     pub fn release_many(&self, amount: isize) {
-        if amount == 0 {
-            return;
-        }
-        *self.lock.lock().unwrap() += amount;
-        self.cvar.notify_all();
+        self.inner.release_many(amount);
     }
 
     /// Acquires a resource of this semaphore, returning an RAII guard to
@@ -134,7 +146,7 @@ impl Semaphore {
     pub fn access(&self) -> SemaphoreGuard {
         self.acquire();
         SemaphoreGuard {
-            sem: self,
+            sem: Arc::clone(&self.inner),
             amount: 1,
         }
     }
@@ -147,13 +159,13 @@ impl Semaphore {
     pub fn access_many(&self, amount: isize) -> SemaphoreGuard {
         self.acquire_many(amount);
         SemaphoreGuard {
-            sem: self,
+            sem: Arc::clone(&self.inner),
             amount: amount,
         }
     }
 }
 
-impl<'a> Drop for SemaphoreGuard<'a> {
+impl Drop for SemaphoreGuard {
     fn drop(&mut self) {
         if self.amount == 0 {
             return;
