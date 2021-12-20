@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["RawSemaphore",""],["Semaphore","A counting, blocking, semaphore."],["SemaphoreGuard","An RAII guard which will release one or more resources acquired from a semaphore when dropped."]]});
